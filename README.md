@@ -83,5 +83,5 @@ FAILURES REPORT BY SERVER
 
 ## Security & Privacy Notice
 
-- **Completely Local**: No telemetry, analytics, or metric data is transmitted outside your local machine. All evaluations are generated on-demand.
+- **Completely Local**: No telemetry, analytics, or metric data is transmitted outside your local machine.
 - **Standard Lookups**: The script relies entirely on regular `A` record network queries using standard native operating system network libraries (`Resolve-DnsName`).
