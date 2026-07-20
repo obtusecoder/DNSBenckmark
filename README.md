@@ -1,19 +1,19 @@
 # DNS Benchmark Tool
 
-A multi-threaded PowerShell script designed to measure, analyze, and compare DNS query latencies and success rates between your **Local DNS Server** and major public DNS providers. 
+A multi threaded PowerShell script designed to measure, analyze, and compare DNS query latencies and success rates between your **Local DNS Server** and major public DNS providers. 
 
-The script uses simultaneous multi-threading to guarantee network equity during performance evaluations and provides detailed breakdown logs for troubleshooting or optimization.
+The script uses simultaneous multi threading to guarantee network equity during performance evaluations and provides detailed breakdown logs for your needs.
 
 ## Features
 
 - **Automated Dependency Management**: Checks for the required `ThreadJob` module and attempts automatic installation (`Scope CurrentUser`) if it is missing.
 - **Preheated Local Cache**: Automatically sends concurrent "preheat" queries to your local DNS server to populate its internal cache before running benchmarks, ensuring an accurate evaluation of cached response times.
 - **Fair Testing Architecture**: 
-  - Randomizes the list of evaluation domains uniformly to eliminate sequence and network caching bias.
-  - Executes benchmarks across upstream providers concurrently via multi-threading to ensure fair network conditions.
+  - Randomizes the list of domains uniformly to eliminate sequence and network caching bias.
+  - Executes benchmarks across upstream providers concurrently via multi threading to ensure fair network conditions.
 - **Strict Performance Filtering**: Queries with latencies exceeding **100ms** or resulting in errors/timeouts are explicitly tracked as failures.
-- **Comprehensive Failure Breakdown**: Aggregates failures and reports them alphabetically by domain for straightforward root-cause analysis (e.g., Timeout, NXDOMAIN).
-- **Extensive Export Options**: Saves summarized metrics along with granular, sorted per-domain latency reports into a structured text document.
+- **Comprehensive Failure Breakdown**: Aggregates failures and reports them alphabetically by domain for straightforward analysis (e.g., Timeout, NXDOMAIN).
+- **Export Options**: Saves summarized metrics along with granular, sorted per domain latency reports into a structured text document.
 
 ## Providers Evaluated
 
@@ -25,12 +25,12 @@ The script uses simultaneous multi-threading to guarantee network equity during 
 
 ## Domain Test Suite
 
-The benchmark evaluates **100 localized and global domains** spanning multiple industries to ensure balanced real-world simulation:
+The benchmark evaluates **over 100 localized and global domains** spanning multiple industries to ensure balanced real world simulation:
 - **Search & Infrastructure**: Google, YouTube, Wikipedia, Cloudflare, Bing
 - **Social Media & Communities**: Facebook, Instagram, X (Twitter), Reddit, LinkedIn, Discord, WhatsApp
 - **UK News & Media**: BBC, The Guardian, Daily Mail, Sky, Telegraph, Financial Times
 - **UK Government, Health & Education**: GOV.UK, NHS.uk, Oxford, Cambridge, UCAS
-- **UK Retail & E-commerce**: Amazon.co.uk, eBay, Argos, Tesco, Marks & Spencer, Temu, Etsyd
+- **UK Retail & E-commerce**: Amazon.co.uk, eBay, Argos, Tesco, Marks & Spencer, Temu, Etsy
 - **Finance & Banking**: Barclays, Lloyds, Halifax, NatWest, Monzo, PayPal
 - **Travel & Entertainment**: Trainline, Booking.com, National Rail, Netflix, Spotify, Steam
 
@@ -51,10 +51,11 @@ The benchmark evaluates **100 localized and global domains** spanning multiple i
 1. Clone or download the script file (e.g., `dnsbenchmark.ps1`).
 2. Open PowerShell and execute the script:
    ```powershell
-   .\DnsBenchmark.ps1
+   .\dnsbenchmark.ps1
    ```
+   - You can also run the script from Explorer.
 3. Enter your Local DNS Server IP address when prompted (e.g., `192.168.1.254` or `10.0.0.1`).
-4. View the real-time console matrix.
+4. Wait for the Benchmark to complete. This usually takes less than 30 seconds.
 5. Choose whether to export the detailed logs to a plain text file on your Desktop or a custom path.
 
 ## Console Output Preview
