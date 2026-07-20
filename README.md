@@ -48,7 +48,7 @@ The benchmark evaluates **100 localized and global domains** spanning multiple i
 
 ## Usage
 
-1. Clone or download the script file (e.g., `DnsBenchmark.ps1`).
+1. Clone or download the script file (e.g., `dnsbenchmark.ps1`).
 2. Open PowerShell and execute the script:
    ```powershell
    .\DnsBenchmark.ps1
