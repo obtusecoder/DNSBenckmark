@@ -64,27 +64,61 @@ The benchmark evaluates **over 100 localized and global domains** spanning multi
 ## Console Output Preview
 
 ```text
-==================================================
-DNS Provider    | Avg Latency     | Success Rate
-==================================================
-Local DNS       | 12.45 ms        | 100.0%
-Cloudflare Pri  | 14.20 ms        | 100.0%
-Google DNS Pri  | 19.82 ms        | 100.0%
-Quad 9          | 22.15 ms        | 99.0%
-OpenDNS         | 25.40 ms        | 100.0%
-==================================================
+====================================================================
+DNS Provider    | IPv4 (A)     | IPv6 (AAAA)  | Combined Avg | Success   
+====================================================================
+Local DNS       | 2.14 ms      | 3.10 ms      | 2.62 ms      | 100.0%    
+Cloudflare Pri  | 12.45 ms     | 14.20 ms     | 13.33 ms     | 100.0%    
+Google DNS Pri  | 18.20 ms     | 19.10 ms     | 18.65 ms     | 100.0%    
+Quad 9          | 21.05 ms     | 22.40 ms     | 21.73 ms     | 99.0%     
+OpenDNS         | 24.10 ms     | N/A          | 24.10 ms     | 100.0%    
+====================================================================
 
-==================================================
+====================================================================
 FAILURES REPORT BY SERVER
-==================================================
+====================================================================
 
 [ Quad 9 ]
-  Domain                    | Reason                                  
+  Domain (Record)                | Reason                          
   ------------------------------------------------------------------
-  some-unstable-domain.co.uk| >100ms (112.50 ms)
+  some-unstable-domain.com (AAAA)| >100ms (112.50 ms)
+```
+
+## Export File Preview
+```
+================================================================================
+                      DNS BENCHMARK SUMMARY
+================================================================================
+  Date/Time          : 21/07/2026 13:36:01
+  Domains Tested     : 100
+  IPv6 Mode          : Enabled (A & AAAA Records)
+  Fastest Resolver   : Local DNS (2.62 ms avg)
+================================================================================
+
+--------------------------------------------------------------------------------
+ 1. OVERALL LEADERBOARD
+--------------------------------------------------------------------------------
+Rank   | DNS Provider       | IPv4 (A)    | IPv6 (AAAA) | Combined    | Success   
+--------------------------------------------------------------------------------
+#1     | Local DNS          | 2.14 ms     | 3.10 ms     | 2.62 ms     | 100.0%    
+#2     | Cloudflare Pri     | 12.45 ms    | 14.20 ms    | 13.33 ms    | 100.0%    
+--------------------------------------------------------------------------------
+
+================================================================================
+ 3. RESPONSE TIME & SLOWEST QUERIES (>50ms)
+================================================================================
+
+[ PROVIDER: Local DNS ]
+  Latency:
+    -  < 20 ms   : 198 queries
+    - 20 - 50 ms : 2 queries
+    - 50 - 100ms : 0 queries
+    - Failed     : 0 queries
+
+  No slow queries (>50ms) detected for this provider.
+--------------------------------------------------------------------------------
 ```
 
 ## Security & Privacy Notice
 
 - **Completely Local**: No telemetry, analytics, or metric data is transmitted outside your local machine.
-- **Standard Lookups**: The script relies entirely on regular `A` record network queries using standard native operating system network libraries (`Resolve-DnsName`).
