@@ -1,4 +1,4 @@
-# Auto-check and install the required ThreadJob module if missing
+# Check and install the required ThreadJob module if missing
 if (-not (Get-Module -ListAvailable -Name ThreadJob)) {
     Write-Host "ThreadJob module not detected. Attempting automatic installation..." -ForegroundColor Yellow
     try {
@@ -14,7 +14,7 @@ if (-not (Get-Module -ListAvailable -Name ThreadJob)) {
     }
 }
 
-# Public servers separated explicitly to prevent array-passing bugs in multi-threading
+# Public servers
 $DnsServers = [ordered]@{
     "Cloudflare Pri" = "1.1.1.1"
     "Cloudflare Sec" = "1.0.0.1"
@@ -90,75 +90,100 @@ function Test-DnsConnectivity {
     }
 }
 
-function Benchmark-Server {
+function Test-IPv6Support {
+    param ([string]$IP)
+    try {
+        $null = Resolve-DnsName -Name "google.com" -Type AAAA -Server $IP -QuickTimeout -ErrorAction Stop
+        return $true
+    }
+    catch {
+        return $false
+    }
+}
+
+$BenchmarkServerBlock = {
     param (
         [string]$Name,
         [string]$IP,
         [string[]]$DomainList,
-        [bool]$IsAlive = $true
+        [bool]$IsAlive = $true,
+        [bool]$EnableIPv6 = $true
     )
 
     if (-not $IsAlive) {
         return [PSCustomObject]@{
-            Name         = $Name
-            AvgTime      = [double]::PositiveInfinity
-            SuccessRate  = 0.0
-            Failures     = @(@{ Domain = "ALL DOMAINS"; Reason = "DNS server unreachable or does not exist" })
-            DetailedLogs = @(@{ Domain = "ALL DOMAINS"; Status = "Fail"; Latency = "Unreachable"; RawMs = [double]::PositiveInfinity })
+            Name            = $Name
+            AvgIPv4         = [double]::PositiveInfinity
+            AvgIPv6         = [double]::PositiveInfinity
+            CombinedAvg     = [double]::PositiveInfinity
+            SuccessRate     = 0.0
+            Failures        = @(@{ Domain = "ALL DOMAINS"; Reason = "DNS server unreachable" })
+            DetailedLogs    = @(@{ Domain = "ALL DOMAINS"; RecordType = "ALL"; Status = "Fail"; Latency = "Unreachable"; RawMs = [double]::PositiveInfinity })
         }
     }
 
-    $totalTime = 0
-    $successfulQueries = 0
+    $recordTypes = if ($EnableIPv6) { @("A", "AAAA") } else { @("A") }
+    
+    $v4Times = @()
+    $v6Times = @()
+    $totalSuccessfulQueries = 0
+    $totalPossibleQueries = $DomainList.Count * $recordTypes.Count
     $serverFailures = @()
     $detailedLogs = @()
 
     foreach ($domain in $DomainList) {
-        $attempts = 0
-        $success = $false
-        $lastMs = 0
-        $lastError = ""
+        foreach ($type in $recordTypes) {
+            $attempts = 0
+            $success = $false
+            $lastMs = 0
+            $lastError = ""
 
-        while ($attempts -lt 2 -and -not $success) {
-            $attempts++
-            $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
-            try {
-                $null = Resolve-DnsName -Name $domain -Type A -Server $IP -QuickTimeout -ErrorAction Stop
-                $stopwatch.Stop()
-                
-                $lastMs = $stopwatch.Elapsed.TotalMilliseconds
-                # Changed from 150ms threshold down to 100ms threshold
-                if ($lastMs -le 100) { $success = $true } else { $lastError = ">100ms ({0:N2} ms)" -f $lastMs }
-            }
-            catch [System.Management.Automation.MethodInvocationException], [System.Net.NetworkInformation.PingException] {
-                $lastError = "Timeout/Network Error"
-            }
-            catch {
-                if ($_.Exception.Message -match "DNS_ERROR_RCODE_NAME_ERROR" -or $_.Exception.Message -match "does not exist") {
-                    $lastError = "NXDOMAIN (Not Found)"
-                    $attempts = 2
-                } else {
-                    $lastError = "Error"
+            while ($attempts -lt 2 -and -not $success) {
+                $attempts++
+                $stopwatch = [System.Diagnostics.Stopwatch]::StartNew()
+                try {
+                    $null = Resolve-DnsName -Name $domain -Type $type -Server $IP -QuickTimeout -ErrorAction Stop
+                    $stopwatch.Stop()
+                    
+                    $lastMs = $stopwatch.Elapsed.TotalMilliseconds
+                    if ($lastMs -le 100) { $success = $true } else { $lastError = ">100ms ({0:N2} ms)" -f $lastMs }
+                }
+                catch [System.Management.Automation.MethodInvocationException], [System.Net.NetworkInformation.PingException] {
+                    $lastError = "Timeout/Network Error"
+                }
+                catch {
+                    if ($_.Exception.Message -match "DNS_ERROR_RCODE_NAME_ERROR" -or $_.Exception.Message -match "does not exist") {
+                        $lastError = "NXDOMAIN (Not Found)"
+                        $attempts = 2
+                    } else {
+                        $lastError = "Error"
+                    }
                 }
             }
-        }
 
-        if ($success) {
-            $totalTime += $lastMs
-            $successfulQueries++
-            $detailedLogs += @{ Domain = $domain; Status = "Success"; Latency = ("{0:N2} ms" -f $lastMs); RawMs = $lastMs }
-        } else {
-            $serverFailures += @{ Domain = $domain; Reason = $lastError }
-            $detailedLogs += @{ Domain = $domain; Status = "Fail"; Latency = if ($lastMs -gt 0) { "{0:N2} ms" -f $lastMs } else { "--" }; RawMs = [double]::PositiveInfinity }
+            if ($success) {
+                if ($type -eq "A") { $v4Times += $lastMs } else { $v6Times += $lastMs }
+                $totalSuccessfulQueries++
+                $detailedLogs += @{ Domain = $domain; RecordType = $type; Status = "Success"; Latency = ("{0:N2} ms" -f $lastMs); RawMs = $lastMs }
+            } else {
+                $serverFailures += @{ Domain = "$domain ($type)"; Reason = $lastError }
+                $detailedLogs += @{ Domain = $domain; RecordType = $type; Status = "Fail"; Latency = if ($lastMs -gt 0) { "{0:N2} ms" -f $lastMs } else { "--" }; RawMs = [double]::PositiveInfinity }
+            }
         }
     }
     
-    $avgTime = if ($successfulQueries -gt 0) { $totalTime / $successfulQueries } else { [double]::PositiveInfinity }
-    $successRate = ($successfulQueries / $DomainList.Count) * 100
+    $avgV4 = if ($v4Times.Count -gt 0) { ($v4Times | Measure-Object -Average).Average } else { [double]::PositiveInfinity }
+    $avgV6 = if ($v6Times.Count -gt 0) { ($v6Times | Measure-Object -Average).Average } else { [double]::PositiveInfinity }
+    
+    $allTimes = $v4Times + $v6Times
+    $combinedAvg = if ($allTimes.Count -gt 0) { ($allTimes | Measure-Object -Average).Average } else { [double]::PositiveInfinity }
+    $successRate = ($totalSuccessfulQueries / $totalPossibleQueries) * 100
     
     return [PSCustomObject]@{
         Name         = $Name
-        AvgTime      = $avgTime
+        AvgIPv4      = $avgV4
+        AvgIPv6      = $avgV6
+        CombinedAvg  = $combinedAvg
         SuccessRate  = $successRate
         Failures     = $serverFailures
         DetailedLogs = $detailedLogs
@@ -167,15 +192,15 @@ function Benchmark-Server {
 
 function main {
     Write-Host "============================================================"
-    Write-Host "                DNS BENCHMARK TOOL"
+    Write-Host "                DNS BENCHMARK TOOL v2.0"
     Write-Host "============================================================"
     Write-Host "DISCLAIMER & INFO:"
     Write-Host "This script measures and compares DNS query latency (response times)"
     Write-Host "between your local server and major public DNS providers."
     Write-Host ""
-    Write-Host "- It performs real-time 'A' record lookups against popular websites."
-    Write-Host "- Queries taking longer than 100ms are marked as failures." # Updated description text
-    Write-Host "- Run order is randomized uniformly to prevent network bias."
+    Write-Host "- Tests both IPv4 (A) and IPv6 (AAAA) resolution performance."
+    Write-Host "- Queries taking longer than 100ms are marked as failures."
+    Write-Host "- Run order is randomized to prevent network bias."
     Write-Host "- Upstream runs execute simultaneously to ensure network equity."
     Write-Host "- No data is sent or logged outside of your local machine."
     Write-Host "============================================================`n"
@@ -187,13 +212,26 @@ function main {
 
     if (-not $localIsAlive) {
         Write-Host "Warning: Local DNS server ($localDnsIp) is not responsive." -ForegroundColor Yellow
+        Write-Host "Skipping IPv6 capability check because Local DNS is unreachable." -ForegroundColor Yellow
+        $hasIPv6 = $false
     } else {
+        Write-Host "Checking IPv6 (AAAA) capability on local network..." -ForegroundColor Gray
+        $hasIPv6 = Test-IPv6Support -IP $localDnsIp
+        if ($hasIPv6) {
+            Write-Host "IPv6 connectivity detected. Benchmarking A & AAAA records." -ForegroundColor Green
+        } else {
+            Write-Host "IPv6 lookup failed or not supported. Skipping AAAA benchmarks." -ForegroundColor Yellow
+        }
+
         Write-Host "Preheating Local DNS Cache ($($Domains.Count) domains)..." -ForegroundColor Gray
         $jobs = foreach ($domain in $Domains) {
             Start-ThreadJob -ScriptBlock {
-                param($d, $ip)
+                param($d, $ip, $v6)
                 $null = Resolve-DnsName -Name $d -Type A -Server $ip -QuickTimeout -ErrorAction SilentlyContinue
-            } -ArgumentList $domain, $localDnsIp
+                if ($v6) {
+                    $null = Resolve-DnsName -Name $d -Type AAAA -Server $ip -QuickTimeout -ErrorAction SilentlyContinue
+                }
+            } -ArgumentList $domain, $localDnsIp, $hasIPv6
         }
         $null = Wait-Job -Job $jobs
         $jobs | Remove-Job
@@ -202,7 +240,7 @@ function main {
     $FinalDnsServers = [ordered]@{ "Local DNS" = $localDnsIp }
     foreach ($key in $DnsServers.Keys) { $FinalDnsServers[$key] = $DnsServers[$key] }
 
-    # Randomize the domains ONCE here so all threads test the exact same sequence fairly
+    # Uniform shuffling
     $UniformShuffledDomains = $Domains | Get-Random -Count $Domains.Count
 
     $results = @()
@@ -215,7 +253,7 @@ function main {
         $isServerAlive = if ($name -eq "Local DNS") { $localIsAlive } else { $true }
         
         Write-Host "Starting benchmark thread for: $name ($ip)" -ForegroundColor Gray
-        Start-ThreadJob -ScriptBlock ${function:Benchmark-Server} -ArgumentList $name, $ip, $UniformShuffledDomains, $isServerAlive
+        Start-ThreadJob -ScriptBlock $script:BenchmarkServerBlock -ArgumentList $name, $ip, $UniformShuffledDomains, $isServerAlive, $hasIPv6
     }
 
     Write-Host "`nRunning benchmark..." -ForegroundColor Yellow
@@ -229,38 +267,41 @@ function main {
         }
     }
 
-    # Main Comparison Table Construction
-    $consoleOutput = "`n" + ("="*50) + "`n"
-    $consoleOutput += ("{0,-15} | {1,-15} | {2,-12}" -f "DNS Provider", "Avg Latency", "Success Rate") + "`n"
-    $consoleOutput += ("="*50) + "`n"
+    # Main Console Output Table
+    $consoleOutput = "`n" + ("="*68) + "`n"
+    $consoleOutput += ("{0,-15} | {1,-12} | {2,-12} | {3,-12} | {4,-10}" -f "DNS Provider", "IPv4 (A)", "IPv6 (AAAA)", "Combined Avg", "Success") + "`n"
+    $consoleOutput += ("="*68) + "`n"
 
-    $sortedResults = $results | Sort-Object AvgTime
+    $sortedResults = $results | Sort-Object CombinedAvg
 
     foreach ($res in $sortedResults) {
-        $latencyStr = if ($res.AvgTime -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.AvgTime } else { "Failed" }
+        $v4Str = if ($res.AvgIPv4 -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.AvgIPv4 } else { "Failed" }
+        $v6Str = if ($res.AvgIPv6 -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.AvgIPv6 } else { "N/A" }
+        $combStr = if ($res.CombinedAvg -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.CombinedAvg } else { "Failed" }
         $successStr = "{0:N1}%" -f $res.SuccessRate
-        $consoleOutput += ("{0,-15} | {1,-15} | {2,-12}" -f $res.Name, $latencyStr, $successStr) + "`n"
-    }
-    $consoleOutput += ("="*50) + "`n"
 
-    # Separated Failures Section Construction (Alphabetized by Domain)
-    $consoleOutput += "`n" + ("="*50) + "`n"
+        $consoleOutput += ("{0,-15} | {1,-12} | {2,-12} | {3,-12} | {4,-10}" -f $res.Name, $v4Str, $v6Str, $combStr, $successStr) + "`n"
+    }
+    $consoleOutput += ("="*68) + "`n"
+
+    # Console Failures Section
+    $consoleOutput += "`n" + ("="*68) + "`n"
     $consoleOutput += "FAILURES REPORT BY SERVER`n"
-    $consoleOutput += ("="*50) + "`n"
+    $consoleOutput += ("="*68) + "`n"
 
     if ($allFailures.Count -gt 0) {
         foreach ($serverName in $allFailures.Keys) {
             $consoleOutput += "`n[ $serverName ]`n"
-            $consoleOutput += ("  {0,-25} | {1,-40}" -f "Domain", "Reason") + "`n"
-            $consoleOutput += ("  " + "-"*66) + "`n"
+            $consoleOutput += ("  {0,-30} | {1,-32}" -f "Domain (Record)", "Reason") + "`n"
+            $consoleOutput += ("  " + "-"*64) + "`n"
             foreach ($fail in $allFailures[$serverName]) {
-                $consoleOutput += ("  {0,-25} | {1,-40}" -f $fail.Domain, $fail.Reason) + "`n"
+                $consoleOutput += ("  {0,-30} | {1,-32}" -f $fail.Domain, $fail.Reason) + "`n"
             }
         }
     } else {
-        $consoleOutput += "`nAll servers successfully resolved 100% of domains.`n"
+        $consoleOutput += "`nAll servers successfully resolved 100% of queries.`n"
     }
-    $consoleOutput += "`n" + ("="*50)
+    $consoleOutput += "`n" + ("="*68)
 
     Write-Host $consoleOutput
 
@@ -284,30 +325,91 @@ function main {
         $fileName = "dns_benchmark_results_$timestamp.txt"
         $finalDestinationPath = [System.IO.Path]::Combine($targetDirectory, $fileName)
         
-        $fileOutput = "============================================================`n"
-        $fileOutput += "                 DNS BENCHMARK REPORT SUMMARY`n"
-        $fileOutput += "============================================================`n"
-        $fileOutput += $consoleOutput + "`n`n"
-        
-        $fileOutput += "============================================================`n"
-        $fileOutput += "            DETAILED METRICS PER TESTED DOMAIN`n"
-        $fileOutput += "============================================================`n"
-        
-        foreach ($res in $results) {
-            $fileOutput += "`n[ Detailed Results for: $($res.Name) ]`n"
-            $fileOutput += ("{0,-35} | {1,-15} | {2,-15}" -f "Tested Domain", "Status", "Response Time") + "`n"
-            $fileOutput += ("-" * 71) + "`n"
-            
-            $sortedLogs = $res.DetailedLogs | Sort-Object { $_.RawMs }
-            foreach ($log in $sortedLogs) {
-                $fileOutput += ("{0,-35} | {1,-15} | {2,-15}" -f $log.Domain, $log.Status, $log.Latency) + "`n"
+        # Formatted Compact Report
+        $winner = $sortedResults[0]
+        $winnerAvgText = if ($winner.CombinedAvg -ne [double]::PositiveInfinity) { "{0:N2} ms avg" -f $winner.CombinedAvg } else { "N/A (All providers failed)" }
+        $timestampFormatted = Get-Date -Format "dd/MM/yyyy HH:mm:ss"
+
+        $fileOutput  = "================================================================================`n"
+        $fileOutput += "                      DNS BENCHMARK SUMMARY`n"
+        $fileOutput += "================================================================================`n"
+        $fileOutput += "  Date/Time          : $timestampFormatted`n"
+        $fileOutput += "  Domains Tested     : $($Domains.Count)`n"
+        $fileOutput += "  IPv6 Mode          : $(if ($hasIPv6) { 'Enabled (A & AAAA Records)' } else { 'Disabled (A Records Only)' })`n"
+        $fileOutput += "  Fastest Resolver   : $($winner.Name) ($winnerAvgText)`n"
+        $fileOutput += "================================================================================`n`n"
+
+        $fileOutput += "--------------------------------------------------------------------------------`n"
+        $fileOutput += " 1. OVERALL LEADERBOARD`n"
+        $fileOutput += "--------------------------------------------------------------------------------`n"
+        $fileOutput += ("{0,-6} | {1,-18} | {2,-11} | {3,-11} | {4,-11} | {5,-10}" -f "Rank", "DNS Provider", "IPv4 (A)", "IPv6 (AAAA)", "Combined", "Success") + "`n"
+        $fileOutput += "--------------------------------------------------------------------------------`n"
+
+        $rank = 1
+        foreach ($res in $sortedResults) {
+            $v4Str = if ($res.AvgIPv4 -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.AvgIPv4 } else { "Failed" }
+            $v6Str = if ($res.AvgIPv6 -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.AvgIPv6 } else { "N/A" }
+            $combStr = if ($res.CombinedAvg -ne [double]::PositiveInfinity) { "{0:N2} ms" -f $res.CombinedAvg } else { "Failed" }
+            $successStr = "{0:N1}%" -f $res.SuccessRate
+
+            $fileOutput += ("#{0,-5} | {1,-18} | {2,-11} | {3,-11} | {4,-11} | {5,-10}" -f $rank, $res.Name, $v4Str, $v6Str, $combStr, $successStr) + "`n"
+            $rank++
+        }
+        $fileOutput += "--------------------------------------------------------------------------------`n`n"
+
+        $fileOutput += "--------------------------------------------------------------------------------`n"
+        $fileOutput += " 2. FAILURES SUMMARY`n"
+        $fileOutput += "--------------------------------------------------------------------------------`n"
+
+        if ($allFailures.Count -gt 0) {
+            foreach ($serverName in $allFailures.Keys) {
+                $fileOutput += "[ $serverName ]`n"
+                foreach ($fail in $allFailures[$serverName]) {
+                    $fileOutput += ("  - {0,-32} - {1}" -f $fail.Domain, $fail.Reason) + "`n"
+                }
+                $fileOutput += "`n"
             }
-            $fileOutput += ("=" * 71) + "`n"
+        } else {
+            $fileOutput += "All servers resolved 100% of domains successfully.`n`n"
+        }
+        $fileOutput += "--------------------------------------------------------------------------------`n`n"
+
+        $fileOutput += "================================================================================`n"
+        $fileOutput += " 3. RESPONSE TIME & SLOWEST QUERIES (>50ms)`n"
+        $fileOutput += "================================================================================`n"
+
+        foreach ($res in $results) {
+            $fileOutput += "`n[ PROVIDER: $($res.Name) ]`n"
+            
+            $under20 = ($res.DetailedLogs | Where-Object { $_.RawMs -lt 20 }).Count
+            $between20and50 = ($res.DetailedLogs | Where-Object { $_.RawMs -ge 20 -and $_.RawMs -le 50 }).Count
+            $between50and100 = ($res.DetailedLogs | Where-Object { $_.RawMs -gt 50 -and $_.RawMs -le 100 }).Count
+            $failedCount = ($res.DetailedLogs | Where-Object { $_.Status -ne "Success" }).Count
+
+            $fileOutput += "  Latency:`n"
+            $fileOutput += "    -  < 20 ms   : $under20 queries`n"
+            $fileOutput += "    - 20 - 50 ms : $between20and50 queries`n"
+            $fileOutput += "    - 50 - 100ms : $between50and100 queries`n"
+            $fileOutput += "    - Failed     : $failedCount queries`n`n"
+
+            $slowQueries = $res.DetailedLogs | Where-Object { $_.RawMs -gt 50 -and $_.Status -eq "Success" } | Sort-Object -Property RawMs -Descending
+            if ($slowQueries.Count -gt 0) {
+                $fileOutput += "  Slowest Successful Resolves (>50ms):`n"
+                $fileOutput += ("  " + "-"*56) + "`n"
+                $fileOutput += ("  {0,-32} | {1,-8} | {2,-10}" -f "Domain", "Record", "Latency") + "`n"
+                $fileOutput += ("  " + "-"*56) + "`n"
+                foreach ($slow in $slowQueries) {
+                    $fileOutput += ("  {0,-32} | {1,-8} | {2,-10}" -f $slow.Domain, $slow.RecordType, $slow.Latency) + "`n"
+                }
+            } else {
+                $fileOutput += "  No slow queries (>50ms) detected for this provider.`n"
+            }
+            $fileOutput += "--------------------------------------------------------------------------------`n"
         }
 
         try {
             $fileOutput | Out-File -FilePath $finalDestinationPath -Encoding utf8
-            Write-Host "`nSuccess: Exported file to:`n$finalDestinationPath" -ForegroundColor Green
+            Write-Host "`nSuccess: Exported report to:`n$finalDestinationPath" -ForegroundColor Green
         }
         catch {
             Write-Host "`nError: Could not write the file. Details: $_" -ForegroundColor Red
@@ -315,7 +417,7 @@ function main {
     } else {
         Write-Host "`nExiting without file export." -ForegroundColor Gray
     }
-Read-Host "Press Enter to Exit."
+    Read-Host "Press Enter to Exit."
 }
 
 main
