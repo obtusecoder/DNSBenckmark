@@ -1,5 +1,8 @@
 # DNS Benchmark Tool
 
+**NOTE**: SEE CHANGES IN CHANGELOG, THE BELOW MIGHT NOT BE 100% ACCURATE YET
+
+
 A multi threaded PowerShell script designed to measure, analyze, and compare DNS query latencies and success rates between your **Local DNS Server** and major public DNS providers. 
 
 The script uses simultaneous multi threading to guarantee network equity during performance evaluations and provides detailed breakdown logs for your needs.
@@ -48,10 +51,10 @@ The benchmark evaluates **over 100 localized and global domains** spanning multi
 
 ## Usage
 
-1. Clone or download the script file (e.g., `dnsbenchmark.ps1`).
+1. Clone or download the script file (e.g., `dnsbenchmark_v2.ps1`).
 2. Open PowerShell and execute the script:
    ```powershell
-   .\dnsbenchmark.ps1
+   .\dnsbenchmark_v2.ps1
    ```
    - You can also run the script from Explorer.
 3. Enter your Local DNS Server IP address when prompted (e.g., `192.168.1.254` or `10.0.0.1`).
