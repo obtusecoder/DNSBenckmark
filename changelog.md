@@ -1,6 +1,12 @@
 # Changelog
 
-## [2.0.0] - dnsbenchmark_v2.ps1
+## [2.1] - dnsbenchmark.ps1
+
+### Fixed
+- **IPv6 Issue**: IPv6 benchmark wouldn't run if the local DNS entered was incorret/unsupported/wrong.
+- **Global IPv6**: Instead of passing a single $hasIPv6 flag to every thread based only on local DNS behavior, each DNS provider should evaluate or test IPv6 support independently (or test AAAA records regardless and report failures if IPv6 resolution fails for whatever reason).
+
+## [2.0.0] - dnsbenchmark.ps1
 
 ### Added
 - **Dual Stack Testing (IPv4 & IPv6)**: Added full benchmarking for both IPv4 (`A` records) and IPv6 (`AAAA` records).
