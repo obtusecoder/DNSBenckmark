@@ -51,10 +51,10 @@ The benchmark evaluates **over 100 localized and global domains** spanning multi
 
 ## Usage
 
-1. Clone or download the script file (e.g., `dnsbenchmark_v2.ps1`).
+1. Clone or download the script file (e.g., `dnsbenchmark.ps1`).
 2. Open PowerShell and execute the script:
    ```powershell
-   .\dnsbenchmark_v2.ps1
+   .\dnsbenchmark.ps1
    ```
    - You can also run the script from Explorer.
 3. Enter your Local DNS Server IP address when prompted (e.g., `192.168.1.254` or `10.0.0.1`).
