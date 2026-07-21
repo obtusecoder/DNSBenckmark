@@ -1,11 +1,9 @@
 # DNS Benchmark Tool
 
-**NOTE**: SEE CHANGES IN CHANGELOG, THE BELOW MIGHT NOT BE 100% ACCURATE YET
-
-
-A multi threaded PowerShell script designed to measure, analyze, and compare DNS query latencies and success rates between your **Local DNS Server** and major public DNS providers. 
-
-The script uses simultaneous multi threading to guarantee network equity during performance evaluations and provides detailed breakdown logs for your needs.
+## Reasons For Writing This Script
+- **Lack of Options**: I had been looking for a DNS Benchmark program and couldn't find one that wasn't either a paid service/program or it lacked a feature I want.
+- **Accuracy**: I wanted something that I knew the code too, and that I could be sure that it was accurate at the time of running the script.
+- **Exporting**: I needed the ability to export the results and store them for reference later.
 
 ## Features
 
