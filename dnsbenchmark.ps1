@@ -192,7 +192,7 @@ $BenchmarkServerBlock = {
 
 function main {
     Write-Host "============================================================"
-    Write-Host "                DNS BENCHMARK TOOL v2.0"
+    Write-Host "                DNS BENCHMARK TOOL v2.1"
     Write-Host "============================================================"
     Write-Host "DISCLAIMER & INFO:"
     Write-Host "This script measures and compares DNS query latency (response times)"
@@ -209,18 +209,18 @@ function main {
     
     Write-Host "`nVerifying Local DNS server status..." -ForegroundColor Gray
     $localIsAlive = Test-DnsConnectivity -IP $localDnsIp
+    $localHasIPv6 = $false
 
     if (-not $localIsAlive) {
         Write-Host "Warning: Local DNS server ($localDnsIp) is not responsive." -ForegroundColor Yellow
-        Write-Host "Skipping IPv6 capability check because Local DNS is unreachable." -ForegroundColor Yellow
-        $hasIPv6 = $false
+        Write-Host "Local DNS will be marked as "Failed" in results." -ForegroundColor Red
     } else {
         Write-Host "Checking IPv6 (AAAA) capability on local network..." -ForegroundColor Gray
-        $hasIPv6 = Test-IPv6Support -IP $localDnsIp
-        if ($hasIPv6) {
-            Write-Host "IPv6 connectivity detected. Benchmarking A & AAAA records." -ForegroundColor Green
+        $localHasIPv6 = Test-IPv6Support -IP $localDnsIp
+        if ($localHasIPv6) {
+            Write-Host "Local DNS: IPv6 (AAAA) records supported." -ForegroundColor Green
         } else {
-            Write-Host "IPv6 lookup failed or not supported. Skipping AAAA benchmarks." -ForegroundColor Yellow
+            Write-Host "Local DNS: IPv6 lookup failed or not supported." -ForegroundColor Red
         }
 
         Write-Host "Preheating Local DNS Cache ($($Domains.Count) domains)..." -ForegroundColor Gray
@@ -231,10 +231,19 @@ function main {
                 if ($v6) {
                     $null = Resolve-DnsName -Name $d -Type AAAA -Server $ip -QuickTimeout -ErrorAction SilentlyContinue
                 }
-            } -ArgumentList $domain, $localDnsIp, $hasIPv6
+            } -ArgumentList $domain, $localDnsIp, $localHasIPv6
         }
         $null = Wait-Job -Job $jobs
         $jobs | Remove-Job
+    }
+
+    # Verify global public IPv6 support using Google DNS (8.8.8.8) independently
+    Write-Host "Testing global IPv6 (AAAA) lookup capability via Public DNS..." -ForegroundColor Gray
+    $publicIPv6Supported = Test-IPv6Support -IP "8.8.8.8"
+    if ($publicIPv6Supported) {
+        Write-Host "Public DNS IPv6 benchmarks: Enabled." -ForegroundColor Green
+    } else {
+        Write-Host "Public DNS IPv6 benchmarks: Disabled (No local network IPv6 stack detected)." -ForegroundColor Yellow
     }
 
     $FinalDnsServers = [ordered]@{ "Local DNS" = $localDnsIp }
@@ -250,10 +259,17 @@ function main {
 
     $benchJobs = foreach ($name in $FinalDnsServers.Keys) {
         $ip = $FinalDnsServers[$name]
-        $isServerAlive = if ($name -eq "Local DNS") { $localIsAlive } else { $true }
+        
+        if ($name -eq "Local DNS") {
+            $isServerAlive = $localIsAlive
+            $serverEnableIPv6 = $localHasIPv6
+        } else {
+            $isServerAlive = $true
+            $serverEnableIPv6 = $publicIPv6Supported
+        }
         
         Write-Host "Starting benchmark thread for: $name ($ip)" -ForegroundColor Gray
-        Start-ThreadJob -ScriptBlock $script:BenchmarkServerBlock -ArgumentList $name, $ip, $UniformShuffledDomains, $isServerAlive, $hasIPv6
+        Start-ThreadJob -ScriptBlock $script:BenchmarkServerBlock -ArgumentList $name, $ip, $UniformShuffledDomains, $isServerAlive, $serverEnableIPv6
     }
 
     Write-Host "`nRunning benchmark..." -ForegroundColor Yellow
@@ -299,7 +315,7 @@ function main {
             }
         }
     } else {
-        $consoleOutput += "`nAll servers successfully resolved 100% of queries.`n"
+        $consoleOutput += "`nAll responsive servers successfully resolved 100% of queries.`n"
     }
     $consoleOutput += "`n" + ("="*68)
 
@@ -335,7 +351,8 @@ function main {
         $fileOutput += "================================================================================`n"
         $fileOutput += "  Date/Time          : $timestampFormatted`n"
         $fileOutput += "  Domains Tested     : $($Domains.Count)`n"
-        $fileOutput += "  IPv6 Mode          : $(if ($hasIPv6) { 'Enabled (A & AAAA Records)' } else { 'Disabled (A Records Only)' })`n"
+        $fileOutput += "  Local DNS IPv6     : $(if ($localHasIPv6) { 'Enabled' } else { 'Disabled/Unsupported' })`n"
+        $fileOutput += "  Public DNS IPv6    : $(if ($publicIPv6Supported) { 'Enabled' } else { 'Disabled' })`n"
         $fileOutput += "  Fastest Resolver   : $($winner.Name) ($winnerAvgText)`n"
         $fileOutput += "================================================================================`n`n"
 
