@@ -213,7 +213,7 @@ function main {
 
     if (-not $localIsAlive) {
         Write-Host "Warning: Local DNS server ($localDnsIp) is not responsive." -ForegroundColor Yellow
-        Write-Host "Local DNS will be marked as "Failed" in results." -ForegroundColor Red
+        Write-Host "Local DNS will be marked as Failed in results." -ForegroundColor Red
     } else {
         Write-Host "Checking IPv6 (AAAA) capability on local network..." -ForegroundColor Gray
         $localHasIPv6 = Test-IPv6Support -IP $localDnsIp
